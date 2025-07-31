@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const API = axios.create({
-  baseURL: 'http://localhost:3000', // Ensure this matches your backend
+  baseURL: 'https://feedback-management-3.onrender.com', // Ensure this matches your backend
 });
 
 // Add request interceptor
