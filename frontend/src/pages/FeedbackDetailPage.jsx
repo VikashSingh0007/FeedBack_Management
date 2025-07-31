@@ -22,7 +22,7 @@ import {
 } from 'react-icons/fi';
 import { toast } from 'react-hot-toast';
 
-const API_BASE_URL = 'https://feedback-management-3.onrender.com';
+const API_BASE_URL = 'https://feedback-management-1-pymq.onrender.com';
 
 const statusOptions = [
     { value: 'pending', label: 'Pending', icon: <FiClock className="mr-2" /> },
