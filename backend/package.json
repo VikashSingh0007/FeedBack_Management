@@ -33,6 +33,8 @@
     "canvas": "^3.1.2",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
+    "form-data": "^4.0.4",
+    "mailgun.js": "^12.0.3",
     "nsfwjs": "^4.2.1",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
