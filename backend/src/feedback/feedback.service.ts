@@ -7,7 +7,8 @@ import { User } from '../users/user.entity';
 import { FeedbackResponseDto } from './dto/feedback-response.dto';
 import { CategoriesService } from '../categories/categories.service';
 import { IdGenerationUtil } from '../utils/id-generation.util';
-import { MailgunService } from '../email/mailgun.service';
+import { MailgunService } from 'src/email/mailgun.service';
+// import { MailgunService } from '../email/mailgun.service';
 
 type FeedbackStatus = 'pending' | 'in_progress' | 'resolved' | 'rejected';
 
