@@ -1,7 +1,11 @@
 // src/categories/dto/update-category.dto.ts
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional } from 'class-validator';
 
 export class UpdateMainCategoryDto {
+  @IsOptional()
+  @IsString()
+  department?: string;
+
   @IsNotEmpty()
   @IsString()
   newName: string;

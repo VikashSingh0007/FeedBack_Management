@@ -20,6 +20,9 @@ export class Feedback {
   @Column({ nullable: true })
   category?: string;
 
+  @Column({ nullable: true })
+  department?: string;
+
   @Column({ nullable: true, type: 'float' })
   rating?: number;
 

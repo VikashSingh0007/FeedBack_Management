@@ -10,6 +10,10 @@ export class CreateFeedbackDto {
 
   @IsOptional()
   @IsString()
+  department?: string;
+
+  @IsOptional()
+  @IsString()
   category?: string;
 
   @IsOptional()

@@ -23,7 +23,7 @@ import { EmailModule } from './email/email.module';
           type: 'postgres',
           url: dbUrl,
           autoLoadEntities: true,
-          synchronize: !isProd,
+          synchronize: false, // Temporarily disable to avoid migration issues
           ssl: {
             rejectUnauthorized: false,
           },
@@ -36,7 +36,7 @@ import { EmailModule } from './email/email.module';
           password: config.get<string>('DATABASE_PASSWORD'),
           database: config.get<string>('DATABASE_NAME'),
           autoLoadEntities: true,
-          synchronize: !isProd,
+          synchronize: false, // Temporarily disable to avoid migration issues
         };
   },
   inject: [ConfigService],

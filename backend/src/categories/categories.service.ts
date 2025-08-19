@@ -12,8 +12,28 @@ export class CategoriesService {
     private categoryRepository: Repository<Category>,
   ) {}
 
-  async findAll(): Promise<Record<string, string[]>> {
+  async findAll(): Promise<Record<string, Record<string, string[]>>> {
     const categories = await this.categoryRepository.find();
+    const result: Record<string, Record<string, string[]>> = {};
+
+    categories.forEach(cat => {
+      if (!result[cat.department]) {
+        result[cat.department] = {};
+      }
+      result[cat.department][cat.mainCategory] = cat.subCategories;
+    });
+
+    return result;
+  }
+
+  async getDepartments(): Promise<string[]> {
+    const categories = await this.categoryRepository.find();
+    const departments = [...new Set(categories.map(cat => cat.department))];
+    return departments;
+  }
+
+  async getCategoriesByDepartment(department: string): Promise<Record<string, string[]>> {
+    const categories = await this.categoryRepository.find({ where: { department } });
     const result: Record<string, string[]> = {};
 
     categories.forEach(cat => {
@@ -24,13 +44,19 @@ export class CategoriesService {
   }
 
   async createMainCategory(dto: CreateMainCategoryDto): Promise<Category> {
-    const existing = await this.categoryRepository.findOne({ where: { mainCategory: dto.name } });
+    const existing = await this.categoryRepository.findOne({ 
+      where: { 
+        department: dto.department,
+        mainCategory: dto.name 
+      } 
+    });
 
     if (existing) {
-      throw new BadRequestException('Main category already exists');
+      throw new BadRequestException('Main category already exists in this department');
     }
 
     const category = this.categoryRepository.create({
+      department: dto.department,
       mainCategory: dto.name,
       subCategories: [],
     });
@@ -38,48 +64,66 @@ export class CategoriesService {
     return this.categoryRepository.save(category);
   }
 
-// src/categories/categories.service.ts
-async addSubCategory(mainCategory: string, subCategory: string) {
-  const category = await this.categoryRepository.findOne({
-    where: { mainCategory },
-  });
+  async addSubCategory(department: string, mainCategory: string, subCategory: string) {
+    const category = await this.categoryRepository.findOne({
+      where: { 
+        department,
+        mainCategory 
+      },
+    });
 
-  if (!category) {
-    throw new Error(`Main category "${mainCategory}" not found`);
+    if (!category) {
+      throw new Error(`Category "${mainCategory}" not found in department "${department}"`);
+    }
+
+    if (category.subCategories.includes(subCategory)) {
+      throw new Error(`Subcategory "${subCategory}" already exists`);
+    }
+
+    category.subCategories.push(subCategory);
+    return this.categoryRepository.save(category);
   }
 
-  if (category.subCategories.includes(subCategory)) {
-    throw new Error(`Subcategory "${subCategory}" already exists`);
-  }
-
-  category.subCategories.push(subCategory);
-  return this.categoryRepository.save(category);
-}
-
-
-  async updateMainCategory(oldName: string, dto: UpdateMainCategoryDto): Promise<Category> {
-    const category = await this.categoryRepository.findOne({ where: { mainCategory: oldName } });
+  async updateMainCategory(department: string, oldName: string, dto: UpdateMainCategoryDto): Promise<Category> {
+    const category = await this.categoryRepository.findOne({ 
+      where: { 
+        department,
+        mainCategory: oldName 
+      } 
+    });
 
     if (!category) {
       throw new NotFoundException('Main category not found');
     }
 
-    const duplicate = await this.categoryRepository.findOne({ where: { mainCategory: dto.newName } });
+    const duplicate = await this.categoryRepository.findOne({ 
+      where: { 
+        department: dto.department || department,
+        mainCategory: dto.newName 
+      } 
+    });
 
-    if (duplicate && duplicate.mainCategory !== oldName) {
+    if (duplicate && (duplicate.department !== department || duplicate.mainCategory !== oldName)) {
       throw new BadRequestException('Another category with this name already exists');
     }
 
+    category.department = dto.department || category.department;
     category.mainCategory = dto.newName;
     return this.categoryRepository.save(category);
   }
 
   async updateSubCategory(
+    department: string,
     mainCategory: string,
     oldSubCategory: string,
     dto: UpdateSubCategoryDto
   ): Promise<Category> {
-    const category = await this.categoryRepository.findOne({ where: { mainCategory } });
+    const category = await this.categoryRepository.findOne({ 
+      where: { 
+        department,
+        mainCategory 
+      } 
+    });
 
     if (!category) {
       throw new NotFoundException('Main category not found');
@@ -103,16 +147,24 @@ async addSubCategory(mainCategory: string, subCategory: string) {
     return this.categoryRepository.save(category);
   }
 
-  async deleteMainCategory(mainCategory: string): Promise<void> {
-    const result = await this.categoryRepository.delete({ mainCategory });
+  async deleteMainCategory(department: string, mainCategory: string): Promise<void> {
+    const result = await this.categoryRepository.delete({ 
+      department,
+      mainCategory 
+    });
 
     if (result.affected === 0) {
       throw new NotFoundException('Main category not found');
     }
   }
 
-  async deleteSubCategory(mainCategory: string, subCategory: string): Promise<Category> {
-    const category = await this.categoryRepository.findOne({ where: { mainCategory } });
+  async deleteSubCategory(department: string, mainCategory: string, subCategory: string): Promise<Category> {
+    const category = await this.categoryRepository.findOne({ 
+      where: { 
+        department,
+        mainCategory 
+      } 
+    });
 
     if (!category) {
       throw new NotFoundException('Main category not found');

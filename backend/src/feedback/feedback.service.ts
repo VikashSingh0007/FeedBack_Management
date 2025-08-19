@@ -49,14 +49,14 @@ export class FeedbackService {
   async create(dto: CreateFeedbackDto, user: any, files?: Express.Multer.File[]) {
     this.logger.log(`Creating new feedback for user ${user.userId}`);
     
-    // Validate category
-    if (dto.category) {
+    // Validate department, category, and subcategory
+    if (dto.department && dto.category) {
       const [mainCat, subCat] = dto.category.split(' - ');
-      const categories = await this.categoriesService.findAll();
+      const categories = await this.categoriesService.getCategoriesByDepartment(dto.department);
       
       if (!categories[mainCat] || !categories[mainCat].includes(subCat)) {
-        this.logger.warn(`Invalid category selected: ${dto.category}`);
-        throw new Error('Invalid category selected');
+        this.logger.warn(`Invalid category selected: ${dto.department} - ${dto.category}`);
+        throw new Error('Invalid department or category selected');
       }
     }
 
@@ -72,6 +72,7 @@ export class FeedbackService {
     const feedback = this.repo.create({
       type: dto.type as 'feedback' | 'request',
       content: dto.content,
+      department: dto.department,
       category: dto.category,
       rating: dto.rating,
       status: 'pending' as FeedbackStatus,
@@ -369,6 +370,12 @@ export class FeedbackService {
       .groupBy('feedback.status')
       .getRawMany();
 
+    // Convert statusCounts array to individual count properties
+    const statusCountsMap = statusCounts.reduce((acc, item) => {
+      acc[item.status] = parseInt(item.count);
+      return acc;
+    }, {} as Record<string, number>);
+
     const averageRating = await this.repo
       .createQueryBuilder('feedback')
       .select('AVG(feedback.rating)', 'average')
@@ -376,12 +383,22 @@ export class FeedbackService {
       .andWhere('feedback.rating IS NOT NULL')
       .getRawOne();
 
-    this.logger.log(`Statistics generated for user ${userId}`);
+    this.logger.log(`Statistics generated for user ${userId}:`, {
+      totalCount,
+      feedbackCount,
+      requestCount,
+      statusCounts: statusCountsMap,
+      averageRating: parseFloat(averageRating?.average) || 0,
+    });
+
     return {
       totalCount,
       feedbackCount,
       requestCount,
-      statusCounts,
+      inProgressCount: statusCountsMap['in_progress'] || 0,
+      resolvedCount: statusCountsMap['resolved'] || 0,
+      rejectedCount: statusCountsMap['rejected'] || 0,
+      pendingCount: statusCountsMap['pending'] || 0,
       averageRating: parseFloat(averageRating?.average) || 0,
     };
   }

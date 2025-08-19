@@ -5,6 +5,7 @@ export class FeedbackResponseDto {
   cardId: string;  // Only expose cardId
   type: string;
   content: string;
+  department?: string;
   category?: string;
   rating?: number;
   status: string;
@@ -23,6 +24,7 @@ export class FeedbackResponseDto {
     dto.cardId = feedback.cardId;
     dto.type = feedback.type;
     dto.content = feedback.content;
+    dto.department = feedback.department;
     dto.category = feedback.category;
     dto.rating = feedback.rating;
     dto.status = feedback.status;
