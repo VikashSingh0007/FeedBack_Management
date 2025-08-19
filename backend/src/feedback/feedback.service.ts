@@ -8,7 +8,6 @@ import { FeedbackResponseDto } from './dto/feedback-response.dto';
 import { CategoriesService } from '../categories/categories.service';
 import { IdGenerationUtil } from '../utils/id-generation.util';
 import { MailgunService } from 'src/email/mailgun.service';
-// import { MailgunService } from '../email/mailgun.service';
 
 type FeedbackStatus = 'pending' | 'in_progress' | 'resolved' | 'rejected';
 
@@ -84,8 +83,9 @@ export class FeedbackService {
     const savedFeedback = await this.repo.save(feedback);
     this.logger.log(`Feedback ${cardId} created successfully`);
 
-    // Send notifications
-    await this.sendNotifications(savedFeedback, user.email);
+    // Send notifications (non-blocking)
+    this.sendNotifications(savedFeedback, user.email)
+      .catch(err => this.logger.error('Notification sending failed:', err));
 
     return FeedbackResponseDto.fromEntity(savedFeedback);
   }
@@ -94,22 +94,39 @@ export class FeedbackService {
     try {
       this.logger.log(`Sending notifications for feedback ${feedback.cardId}`);
       
+      const notificationPromises: Promise<void>[] = [];
+      
+      // User confirmation email
       if (userEmail) {
-        this.logger.log(`Sending confirmation email to ${userEmail}`);
-        await this.mailgunService.sendFeedbackConfirmation(
-          userEmail,
-          feedback.cardId,
-          feedback.type
+        notificationPromises.push(
+          this.mailgunService.sendFeedbackConfirmation(
+            userEmail,
+            feedback.cardId,
+            feedback.type
+          ).then(() => this.logger.log(`Confirmation sent to ${userEmail}`))
+          .catch(err => this.logger.error(`Failed to send confirmation to ${userEmail}:`, err))
         );
-        this.logger.log(`Confirmation email sent to ${userEmail}`);
       }
 
-      this.logger.log('Sending admin notification');
-      await this.mailgunService.sendAdminNotification(feedback);
-      this.logger.log('Admin notification sent successfully');
+      // Admin notification
+      notificationPromises.push(
+        this.mailgunService.sendAdminNotification({
+          cardId: feedback.cardId,
+          type: feedback.type,
+          user: { email: userEmail },
+          content: feedback.content,
+          category: feedback.category,
+          rating: feedback.rating
+        }).then(() => this.logger.log('Admin notification sent'))
+        .catch(err => this.logger.error('Failed to send admin notification:', err))
+      );
+
+      await Promise.all(notificationPromises);
     } catch (error) {
-      this.logger.error('Error sending notifications:', error);
-      throw error;
+      this.logger.error('Error in notification process:', {
+        error: error.message,
+        stack: error.stack
+      });
     }
   }
 
@@ -160,21 +177,126 @@ export class FeedbackService {
     return this.findOne(cardId, userId);
   }
 
-  async updateStatus(cardId: string, status: FeedbackStatus) {
-    this.logger.log(`Updating status of feedback ${cardId} to ${status}`);
-    const feedback = await this.repo.findOne({ where: { cardId } });
-    if (!feedback) {
-      this.logger.warn(`Feedback ${cardId} not found for status update`);
-      throw new NotFoundException('Feedback not found');
+  async updateStatus(cardId: string, status: FeedbackStatus, adminResponse?: string) {
+    this.logger.log(`[FeedbackService] ===== UPDATE STATUS START =====`);
+    this.logger.log(`[FeedbackService] Card ID: ${cardId}`);
+    this.logger.log(`[FeedbackService] New Status: ${status}`);
+    this.logger.log(`[FeedbackService] Admin Response: ${adminResponse || 'None'}`);
+    
+    try {
+      this.logger.log(`[FeedbackService] Finding feedback in database...`);
+      const feedback = await this.repo.findOne({ 
+        where: { cardId },
+        relations: ['user']
+      });
+      
+      if (!feedback) {
+        this.logger.warn(`[FeedbackService] Feedback ${cardId} not found for status update`);
+        throw new NotFoundException('Feedback not found');
+      }
+      
+      this.logger.log(`[FeedbackService] Found feedback:`, {
+        id: feedback.id,
+        cardId: feedback.cardId,
+        currentStatus: feedback.status,
+        userEmail: feedback.user?.email || 'No user email',
+        hasUser: !!feedback.user
+      });
+      
+      this.logger.log(`[FeedbackService] Updating feedback status...`);
+      feedback.status = status;
+      feedback.resolvedAt = status === 'resolved' ? new Date() : undefined;
+      
+      // Update admin response if provided
+      if (adminResponse !== undefined) {
+        this.logger.log(`[FeedbackService] Updating admin response: ${adminResponse}`);
+        feedback.adminResponse = adminResponse;
+      }
+      
+      this.logger.log(`[FeedbackService] Saving updated feedback to database...`);
+      const updatedFeedback = await this.repo.save(feedback);
+      this.logger.log(`[FeedbackService] Feedback saved successfully. New status: ${updatedFeedback.status}`);
+      this.logger.log(`[FeedbackService] Admin response saved: ${updatedFeedback.adminResponse || 'None'}`);
+      this.logger.log(`[FeedbackService] Full updated feedback object:`, {
+        id: updatedFeedback.id,
+        cardId: updatedFeedback.cardId,
+        status: updatedFeedback.status,
+        adminResponse: updatedFeedback.adminResponse,
+        resolvedAt: updatedFeedback.resolvedAt,
+        updatedAt: updatedFeedback.updatedAt
+      });
+      
+      // Send status update notification if user has email
+      if (feedback.user?.email) {
+        this.logger.log(`[FeedbackService] User has email (${feedback.user.email}), sending notifications...`);
+        this.sendStatusUpdateNotification(updatedFeedback)
+          .then(() => this.logger.log(`[FeedbackService] Status update notifications sent successfully`))
+          .catch(err => this.logger.error(`[FeedbackService] Status update notification failed:`, err));
+      } else {
+        this.logger.warn(`[FeedbackService] No user email found, skipping notifications`);
+      }
+      
+      this.logger.log(`[FeedbackService] ===== UPDATE STATUS SUCCESS =====`);
+      return FeedbackResponseDto.fromEntity(updatedFeedback);
+    } catch (error) {
+      this.logger.error(`[FeedbackService] ===== UPDATE STATUS FAILED =====`);
+      this.logger.error(`[FeedbackService] Error in updateStatus:`, error);
+      this.logger.error(`[FeedbackService] Error stack:`, error.stack);
+      throw error;
     }
+  }
+
+  private async sendStatusUpdateNotification(feedback: Feedback) {
+    this.logger.log(`[FeedbackService] ===== SEND STATUS UPDATE NOTIFICATIONS START =====`);
+    this.logger.log(`[FeedbackService] Feedback ID: ${feedback.id}`);
+    this.logger.log(`[FeedbackService] Card ID: ${feedback.cardId}`);
+    this.logger.log(`[FeedbackService] Status: ${feedback.status}`);
+    this.logger.log(`[FeedbackService] User Email: ${feedback.user?.email || 'No email'}`);
+    this.logger.log(`[FeedbackService] Admin Response: ${feedback.adminResponse || 'No response'}`);
     
-    feedback.status = status;
-    feedback.resolvedAt = status === 'resolved' ? new Date() : undefined;
-    
-    const updatedFeedback = await this.repo.save(feedback);
-    this.logger.log(`Status updated successfully for feedback ${cardId}`);
-    
-    return FeedbackResponseDto.fromEntity(updatedFeedback);
+    try {
+      this.logger.log(`[FeedbackService] Preparing notification promises...`);
+      const notificationPromises: Promise<void>[] = [];
+      
+      // Send notification to user
+      if (feedback.user?.email) {
+        this.logger.log(`[FeedbackService] Adding user notification promise for: ${feedback.user.email}`);
+        notificationPromises.push(
+          this.mailgunService.sendFeedbackStatusUpdate(
+            feedback.user.email,
+            feedback.cardId,
+            feedback.type,
+            feedback.status
+          ).then(() => this.logger.log(`[FeedbackService] ✅ User notification sent successfully to ${feedback.user.email}`))
+          .catch(err => this.logger.error(`[FeedbackService] ❌ Failed to send user notification to ${feedback.user.email}:`, err))
+        );
+      } else {
+        this.logger.warn(`[FeedbackService] No user email found, skipping user notification`);
+      }
+
+      // Send notification to admin
+      this.logger.log(`[FeedbackService] Adding admin notification promise...`);
+      notificationPromises.push(
+        this.mailgunService.sendAdminStatusUpdateNotification({
+          cardId: feedback.cardId,
+          type: feedback.type,
+          user: { email: feedback.user?.email },
+          status: feedback.status,
+          adminResponse: feedback.adminResponse
+        }).then(() => this.logger.log(`[FeedbackService] ✅ Admin notification sent successfully`))
+        .catch(err => this.logger.error(`[FeedbackService] ❌ Failed to send admin notification:`, err))
+      );
+
+      this.logger.log(`[FeedbackService] Executing ${notificationPromises.length} notification promises...`);
+      await Promise.all(notificationPromises);
+      this.logger.log(`[FeedbackService] ===== SEND STATUS UPDATE NOTIFICATIONS SUCCESS =====`);
+    } catch (error) {
+      this.logger.error(`[FeedbackService] ===== SEND STATUS UPDATE NOTIFICATIONS FAILED =====`);
+      this.logger.error(`[FeedbackService] Error in notification process:`, {
+        error: error.message,
+        stack: error.stack
+      });
+    }
   }
 
   async getStatistics() {

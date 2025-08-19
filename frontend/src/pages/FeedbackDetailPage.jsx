@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import API from '../services/api';
 import {
     FiArrowLeft,
     FiClock,
@@ -21,8 +21,6 @@ import {
     FiMessageSquare
 } from 'react-icons/fi';
 import { toast } from 'react-hot-toast';
-
-const API_BASE_URL = 'https://feedback-management-1-pymq.onrender.com';
 
 const statusOptions = [
     { value: 'pending', label: 'Pending', icon: <FiClock className="mr-2" /> },
@@ -153,13 +151,9 @@ export default function FeedbackDetailPage() {
 
     const handleDownload = async (filePath) => {
         try {
-            const token = localStorage.getItem('token');
             const fileName = filePath.split('/').pop();
 
-            const response = await axios.get(`${API_BASE_URL}/${filePath}`, {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
+            const response = await API.get(`/${filePath}`, {
                 responseType: 'blob'
             });
 
@@ -194,7 +188,7 @@ export default function FeedbackDetailPage() {
 
         if (previewTypes[fileType]) {
             setPreviewFile({
-                url: `${API_BASE_URL}/${filePath}`,
+                url: `${API.defaults.baseURL}/${filePath}`,
                 type: previewTypes[fileType]
             });
         } else {
@@ -207,31 +201,39 @@ export default function FeedbackDetailPage() {
     useEffect(() => {
         const fetchFeedback = async () => {
             try {
+                console.log('🔄 [Frontend] Fetching feedback for ID:', id);
+                
                 const token = localStorage.getItem('token');
                 if (!token) {
+                    console.log('❌ [Frontend] No token found, redirecting to login');
                     navigate('/login');
                     return;
                 }
 
                 const decoded = decodeToken(token);
                 const userIsAdmin = decoded?.role === 'admin';
+                console.log('👤 [Frontend] User role:', decoded?.role, 'Is Admin:', userIsAdmin);
+                
                 setIsAdmin(userIsAdmin);
 
                 const endpoint = userIsAdmin
                     ? `/feedback/admin/${id}`
                     : `/feedback/user/${id}`;
+                
+                console.log('🌐 [Frontend] Fetching from endpoint:', endpoint);
+                console.log('🌐 [Frontend] Full URL:', `${API.defaults.baseURL}${endpoint}`);
 
-                const response = await axios.get(`${API_BASE_URL}${endpoint}`, {
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
+                const response = await API.get(endpoint);
+                console.log('✅ [Frontend] Feedback data received:', response.data);
 
                 setFeedback(response.data);
                 setSelectedStatus(response.data.status);
                 setAdminComment(response.data.adminResponse || '');
+                
+                console.log('✅ [Frontend] Feedback state updated successfully');
             } catch (err) {
+                console.error('❌ [Frontend] Failed to fetch feedback:', err);
+                console.error('❌ [Frontend] Error response:', err.response?.data);
                 setError(err.response?.data?.message || 'Failed to load feedback');
                 toast.error(err.response?.data?.message || 'Failed to load feedback');
             } finally {
@@ -243,23 +245,27 @@ export default function FeedbackDetailPage() {
     }, [id, navigate]);
 
 const handleStatusUpdate = async (newStatus, comment = '') => {
+    console.log('🔄 [Frontend] Status update started:', { newStatus, comment, feedbackId: id });
+    
     try {
         const token = localStorage.getItem('token');
+        console.log('🔑 [Frontend] Token found:', !!token);
+        
         const payload = {
             status: newStatus,
             adminResponse: comment
         };
+        
+        console.log('📤 [Frontend] Sending payload:', payload);
+        console.log('🌐 [Frontend] API endpoint:', `/feedback/admin/${id}/status`);
+        console.log('🌐 [Frontend] Full URL:', `${API.defaults.baseURL}/feedback/admin/${id}/status`);
 
-        const response = await axios.patch(
-            `${API_BASE_URL}/feedback/admin/${id}/status`,
-            payload,
-            {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                }
-            }
+        const response = await API.patch(
+            `/feedback/admin/${id}/status`,
+            payload
         );
+
+        console.log('✅ [Frontend] API response received:', response.data);
 
         // Client-side timestamp fallback
         const updatedFeedback = {
@@ -269,11 +275,18 @@ const handleStatusUpdate = async (newStatus, comment = '') => {
                 : null
         };
 
+        console.log('🔄 [Frontend] Updated feedback object:', updatedFeedback);
+
         toast.success('Status updated successfully');
         setFeedback(updatedFeedback);
         setIsResolving(false);
         setShowStatusDropdown(false);
+        
+        console.log('✅ [Frontend] Status update completed successfully');
     } catch (err) {
+        console.error('❌ [Frontend] Status update failed:', err);
+        console.error('❌ [Frontend] Error response:', err.response?.data);
+        console.error('❌ [Frontend] Error status:', err.response?.status);
         toast.error(err.response?.data?.message || 'Failed to update status');
     }
 };

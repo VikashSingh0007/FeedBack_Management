@@ -38,6 +38,9 @@ export class Feedback {
   @Column({ nullable: true, type: 'timestamp' })
   resolvedAt?: Date;
 
+  @Column({ nullable: true, type: 'text' })
+  adminResponse?: string;
+
   @ManyToOne(() => User, user => user.feedbacks, { eager: false })
   user: User;
 }

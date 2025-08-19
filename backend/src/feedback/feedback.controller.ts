@@ -146,18 +146,28 @@ export class FeedbackController {
   }
 
   @Patch('admin/:cardId/status')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
   async updateStatus(
     @Param('cardId') cardId: string,
-    @Body('status') status: FeedbackStatus
+    @Body() body: { status: FeedbackStatus; adminResponse?: string }
   ) {
-    console.log(`[FeedbackController] Updating status for feedback ${cardId} to ${status}`);
+    console.log(`[FeedbackController] ===== STATUS UPDATE REQUEST START =====`);
+    console.log(`[FeedbackController] Card ID: ${cardId}`);
+    console.log(`[FeedbackController] New Status: ${body.status}`);
+    console.log(`[FeedbackController] Admin Response: ${body.adminResponse || 'None'}`);
+    console.log(`[FeedbackController] Request Body:`, JSON.stringify(body, null, 2));
+    
     try {
-      const result = await this.feedbackService.updateStatus(cardId, status);
-      console.log(`[FeedbackController] Successfully updated status for ${cardId}`);
+      console.log(`[FeedbackController] Calling feedback service updateStatus...`);
+      const result = await this.feedbackService.updateStatus(cardId, body.status, body.adminResponse);
+      console.log(`[FeedbackController] Service returned result:`, JSON.stringify(result, null, 2));
+      console.log(`[FeedbackController] ===== STATUS UPDATE REQUEST SUCCESS =====`);
       return result;
     } catch (error) {
+      console.error(`[FeedbackController] ===== STATUS UPDATE REQUEST FAILED =====`);
       console.error(`[FeedbackController] Error updating status for ${cardId}:`, error);
+      console.error(`[FeedbackController] Error stack:`, error.stack);
       throw new BadRequestException('Failed to update feedback status');
     }
   }

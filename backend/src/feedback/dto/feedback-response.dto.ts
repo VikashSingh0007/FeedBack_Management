@@ -12,6 +12,7 @@ export class FeedbackResponseDto {
   createdAt: Date;
   updatedAt: Date;
   resolvedAt?: Date;
+  adminResponse?: string;
   user: {
     id: number;
     email: string;
@@ -29,6 +30,7 @@ export class FeedbackResponseDto {
     dto.createdAt = feedback.createdAt;
     dto.updatedAt = feedback.updatedAt;
     dto.resolvedAt = feedback.resolvedAt;
+    dto.adminResponse = feedback.adminResponse;
     
     if (feedback.user) {
       dto.user = {

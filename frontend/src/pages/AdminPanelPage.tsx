@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import API from '../services/api';
+import config from '../config/config';
 import {
   FiClock, FiUser, FiAlertCircle, FiCheck, FiX,
   FiDownload, FiBarChart2, FiPieChart,
@@ -210,8 +211,68 @@ const AdminDashboard = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold text-gray-800">Feedback Dashboard</h1>
+        <div className="flex items-center space-x-4">
+          <h1 className="text-3xl font-bold text-gray-800">Feedback Dashboard</h1>
+          <div className={`px-3 py-1 rounded-full text-xs font-medium ${
+            config.environment === 'development' 
+              ? 'bg-green-100 text-green-800' 
+              : 'bg-blue-100 text-blue-800'
+          }`}>
+            🌍 {config.environment.toUpperCase()}
+          </div>
+          <div className="text-sm text-gray-500">
+            Backend: {config.apiBaseURL}
+          </div>
+        </div>
         <div className="flex space-x-4">
+          <button
+            onClick={async () => {
+              try {
+                console.log('🧪 [AdminPanel] Testing email functionality...');
+                console.log('🌐 [AdminPanel] Current backend URL:', config.apiBaseURL);
+                const response = await API.get('/email-test/status-update');
+                console.log('✅ [AdminPanel] Email test response:', response.data);
+                toast.success('Email test completed! Check console for details.');
+              } catch (error) {
+                console.error('❌ [AdminPanel] Email test failed:', error);
+                toast.error('Email test failed! Check console for details.');
+              }
+            }}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+          >
+            🧪 Test Email
+          </button>
+          <button
+            onClick={async () => {
+              try {
+                console.log('🌐 [AdminPanel] Testing API connectivity...');
+                console.log('🌐 [AdminPanel] API Base URL:', config.apiBaseURL);
+                console.log('🌐 [AdminPanel] Full endpoint:', `${config.apiBaseURL}/feedback/admin/stats`);
+                const response = await API.get('/feedback/admin/stats');
+                console.log('✅ [AdminPanel] API test response:', response.data);
+                toast.success('API connectivity test passed!');
+              } catch (error) {
+                console.error('❌ [AdminPanel] API test failed:', error);
+                toast.error('API connectivity test failed! Check console for details.');
+              }
+            }}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            🌐 Test API
+          </button>
+          <button
+            onClick={() => {
+              console.log('🔄 [AdminPanel] Current configuration:', {
+                environment: config.environment,
+                apiBaseURL: config.apiBaseURL,
+                windowHostname: window.location.hostname
+              });
+              toast.success(`Current backend: ${config.apiBaseURL}`);
+            }}
+            className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+          >
+            📋 Show Config
+          </button>
           <div className="flex items-center space-x-2 bg-white px-3 py-2 rounded-lg shadow-sm">
             <FiCalendar className="text-gray-500" />
             <select

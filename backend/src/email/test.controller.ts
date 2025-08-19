@@ -33,4 +33,50 @@ export class TestController {
       };
     }
   }
+
+  @Get('status-update')
+  async testStatusUpdateEmail() {
+    try {
+      const testEmail = 'Singhvikash7077@gmail.com';
+      
+      console.log(`[TestController] Testing status update email to ${testEmail}`);
+      
+      // Test user notification
+      const userResult = await this.mailgunService.sendFeedbackStatusUpdate(
+        testEmail,
+        'TEST-456',
+        'request',
+        'in_progress'
+      );
+      
+      // Test admin notification
+      const adminResult = await this.mailgunService.sendAdminStatusUpdateNotification({
+        cardId: 'TEST-456',
+        type: 'request',
+        user: { email: testEmail },
+        status: 'in_progress',
+        adminResponse: 'This is a test admin response for debugging purposes.'
+      });
+      
+      return {
+        success: true,
+        message: 'Status update test emails sent successfully',
+        userEmail: {
+          success: true,
+          mailgunResponse: userResult
+        },
+        adminEmail: {
+          success: true,
+          mailgunResponse: adminResult
+        }
+      };
+    } catch (error) {
+      console.error('[TestController] Status update email test failed:', error);
+      return {
+        success: false,
+        error: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      };
+    }
+  }
 }
