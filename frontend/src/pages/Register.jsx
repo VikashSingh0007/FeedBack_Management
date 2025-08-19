@@ -50,10 +50,14 @@ const Register = () => {
       });
       
       localStorage.setItem('token', res.data.access_token);
-      toast.success('Account created successfully!');
+      
+      // Trigger a storage event to notify other components
+      window.dispatchEvent(new Event('storage'));
+      
+      toast.success('Account created successfully! Welcome to our community!');
       navigate('/');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Registration failed');
+      toast.error(err.response?.data?.message || 'Registration failed. Please try again.');
     } finally {
       setIsLoading(false);
     }

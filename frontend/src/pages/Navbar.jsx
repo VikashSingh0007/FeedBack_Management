@@ -47,6 +47,10 @@ const Navbar = () => {
     localStorage.removeItem("token");
     setToken(null);
     setIsMobileMenuOpen(false);
+    
+    // Trigger a storage event to notify other components
+    window.dispatchEvent(new Event('storage'));
+    
     navigate("/login");
   };
 
