@@ -140,6 +140,8 @@ export default function FeedbackDetailPage() {
     const [showStatusDropdown, setShowStatusDropdown] = useState(false);
     const [selectedStatus, setSelectedStatus] = useState('');
     const [previewFile, setPreviewFile] = useState(null);
+    // Chat system state (only for requests)
+    const [chatMessage, setChatMessage] = useState('');
 
     const decodeToken = (token) => {
         try {
@@ -200,49 +202,42 @@ export default function FeedbackDetailPage() {
 
     useEffect(() => {
         const fetchFeedback = async () => {
+            setLoading(true);
             try {
-                console.log('🔄 [Frontend] Fetching feedback for ID:', id);
-                
                 const token = localStorage.getItem('token');
                 if (!token) {
-                    console.log('❌ [Frontend] No token found, redirecting to login');
-                    navigate('/login');
+                    setError('No authentication token found');
+                    setLoading(false);
                     return;
                 }
 
                 const decoded = decodeToken(token);
-                const userIsAdmin = decoded?.role === 'admin';
-                console.log('👤 [Frontend] User role:', decoded?.role, 'Is Admin:', userIsAdmin);
-                
-                setIsAdmin(userIsAdmin);
+                setIsAdmin(decoded?.role === 'admin');
 
-                const endpoint = userIsAdmin
-                    ? `/feedback/admin/${id}`
+                const endpoint = decoded?.role === 'admin' 
+                    ? `/feedback/admin/${id}` 
                     : `/feedback/user/${id}`;
-                
-                console.log('🌐 [Frontend] Fetching from endpoint:', endpoint);
-                console.log('🌐 [Frontend] Full URL:', `${API.defaults.baseURL}${endpoint}`);
 
                 const response = await API.get(endpoint);
-                console.log('✅ [Frontend] Feedback data received:', response.data);
-
-                setFeedback(response.data);
-                setSelectedStatus(response.data.status);
-                setAdminComment(response.data.adminResponse || '');
+                console.log('📱 [Frontend] Feedback data received:', response.data);
+                console.log('📱 [Frontend] Chat messages:', response.data.chatMessages);
+                console.log('📱 [Frontend] Chat messages length:', response.data.chatMessages?.length || 0);
+                console.log('📱 [Frontend] Status received:', response.data.status);
                 
-                console.log('✅ [Frontend] Feedback state updated successfully');
+                setFeedback(response.data);
+                setSelectedStatus(response.data.status); // Initialize selectedStatus with current status
+                setLoading(false);
             } catch (err) {
-                console.error('❌ [Frontend] Failed to fetch feedback:', err);
-                console.error('❌ [Frontend] Error response:', err.response?.data);
-                setError(err.response?.data?.message || 'Failed to load feedback');
-                toast.error(err.response?.data?.message || 'Failed to load feedback');
-            } finally {
+                console.error('❌ [Frontend] Error fetching feedback:', err);
+                setError(err.response?.data?.message || 'Failed to fetch feedback');
                 setLoading(false);
             }
         };
 
-        fetchFeedback();
-    }, [id, navigate]);
+        if (id) {
+            fetchFeedback();
+        }
+    }, [id]);
 
 const handleStatusUpdate = async (newStatus, comment = '') => {
     console.log('🔄 [Frontend] Status update started:', { newStatus, comment, feedbackId: id });
@@ -295,6 +290,41 @@ const handleStatusUpdate = async (newStatus, comment = '') => {
             handleStatusUpdate('pending');
         } else {
             handleStatusUpdate('resolved', feedback.adminResponse);
+        }
+    };
+
+    const handleSendMessage = async () => {
+        if (!chatMessage.trim() || !id) return;
+
+        // Only allow chat messages for request type
+        if (feedback.type !== 'request') {
+            toast.error('Chat is only available for requests, not feedback');
+            return;
+        }
+
+        try {
+            const token = localStorage.getItem('token');
+            const decoded = decodeToken(token);
+            const isAdmin = decoded?.role === 'admin';
+
+            const message = {
+                message: chatMessage,
+                isAdmin: isAdmin,
+                timestamp: new Date().toISOString()
+            };
+
+            const response = await API.post(`/feedback/${feedback.cardId}/chat`, message);
+            console.log('✅ [Frontend] Message sent successfully:', response.data);
+
+            setChatMessage('');
+            setFeedback(prev => ({
+                ...prev,
+                chatMessages: [...(prev.chatMessages || []), response.data]
+            }));
+            toast.success('Message sent!');
+        } catch (err) {
+            console.error('❌ [Frontend] Failed to send message:', err);
+            toast.error(err.response?.data?.message || 'Failed to send message');
         }
     };
 
@@ -360,15 +390,15 @@ const handleStatusUpdate = async (newStatus, comment = '') => {
                 <FiArrowLeft className="mr-2" /> Back to {isAdmin ? 'Dashboard' : 'Feedback List'}
             </button>
 
-            <div className={`p-6 rounded-lg shadow-md ${feedback.type === 'complaint'
-                    ? 'bg-red-50 border-l-4 border-red-500'
+            <div className={`p-6 rounded-lg shadow-md ${feedback.type === 'request'
+                    ? 'bg-purple-50 border-l-4 border-purple-500'
                     : 'bg-white border-l-4 border-blue-500'
                 }`}>
                 <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-4">
                     <div>
                         <div className="flex items-center gap-2 mb-2">
                             <h1 className="text-1.5xl font-bold text-gray-800">
-                                {feedback.type === 'complaint' ? 'Complaint' : 'Feedback'} Details
+                                {feedback.type === 'request' ? 'Request' : 'Feedback'} Details
                             </h1>
                             <span className="text-sm font-mono bg-gray-100 px-2 py-1 rounded text-gray-700">
                                 {feedback.cardId}
@@ -376,11 +406,11 @@ const handleStatusUpdate = async (newStatus, comment = '') => {
                         </div>
                         
                         <div className="flex flex-wrap gap-2">
-                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${feedback.type === 'complaint'
-                                    ? 'bg-red-100 text-red-800'
+                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${feedback.type === 'request'
+                                    ? 'bg-purple-100 text-purple-800'
                                     : 'bg-blue-100 text-blue-800'
                                 }`}>
-                                {feedback.type === 'complaint' ? 'Complaint' : 'Feedback'}
+                                {feedback.type === 'request' ? 'Request' : 'Feedback'}
                             </span>
 
                             {isAdmin ? (
@@ -563,6 +593,85 @@ const handleStatusUpdate = async (newStatus, comment = '') => {
                             </button>
                         </div>
                     </div>
+                )}
+
+                {/* Chat System Section - Only for Requests */}
+                {feedback.type === 'request' ? (
+                  <div className="mt-6 bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+                      <h2 className="text-lg font-semibold text-gray-700 mb-4 flex items-center">
+                          <FiMessageSquare className="mr-2" /> 
+                          Request Discussion
+                      </h2>
+                      
+                      {/* Chat Messages */}
+                      <div className="bg-gray-50 rounded-lg p-4 mb-4 max-h-96 overflow-y-auto">
+                          {/* Debug info */}
+                          <div className="text-xs text-gray-500 mb-2 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                              Debug: Chat messages count: {feedback.chatMessages?.length || 0}
+                          </div>
+                          
+                          {feedback.chatMessages && feedback.chatMessages.length > 0 ? (
+                              <div className="space-y-3">
+                                  {feedback.chatMessages.map((message, index) => (
+                                      <div
+                                          key={index}
+                                          className={`flex ${message.isAdmin ? 'justify-end' : 'justify-start'}`}
+                                      >
+                                          <div
+                                              className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                                                  message.isAdmin
+                                                      ? 'bg-blue-600 text-white'
+                                                      : 'bg-white text-gray-800 border border-gray-200'
+                                              }`}
+                                          >
+                                              <div className="text-xs opacity-75 mb-1">
+                                                  {message.isAdmin ? 'Admin' : 'User'} • {new Date(message.timestamp).toLocaleString()}
+                                              </div>
+                                              <p className="text-sm">{message.message}</p>
+                                          </div>
+                                      </div>
+                                  ))}
+                              </div>
+                          ) : (
+                              <div className="text-center text-gray-500 py-8">
+                                  <FiMessageSquare className="mx-auto text-4xl mb-2 opacity-50" />
+                                  <p>No messages yet. Start the conversation!</p>
+                                  <p className="text-xs mt-2">This is normal for new requests.</p>
+                              </div>
+                          )}
+                      </div>
+
+                      {/* Chat Input */}
+                      <div className="flex space-x-2">
+                          <input
+                              type="text"
+                              placeholder="Type your message..."
+                              value={chatMessage}
+                              onChange={(e) => setChatMessage(e.target.value)}
+                              onKeyPress={(e) => {
+                                  if (e.key === 'Enter' && chatMessage.trim()) {
+                                      handleSendMessage();
+                                  }
+                              }}
+                              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                          <button
+                              onClick={handleSendMessage}
+                              disabled={!chatMessage.trim()}
+                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                          >
+                              <FiMessageSquare className="mr-2" />
+                              Send
+                          </button>
+                      </div>
+                  </div>
+                ) : (
+                  <div className="mt-6 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                      <div className="text-center text-gray-500">
+                          <FiMessageSquare className="mx-auto text-4xl mb-2 opacity-50" />
+                          <p className="text-sm">Chat is only available for requests. This is a feedback item.</p>
+                      </div>
+                  </div>
                 )}
             </div>
         </div>

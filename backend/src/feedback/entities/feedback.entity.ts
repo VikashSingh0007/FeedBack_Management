@@ -24,7 +24,7 @@ export class Feedback {
   department?: string;
 
   @Column({ nullable: true, type: 'float' })
-  rating?: number;
+  rating?: number | null;
 
   @Column({ default: 'pending' })
   status: 'pending' | 'in_progress' | 'resolved' | 'rejected';
@@ -43,6 +43,27 @@ export class Feedback {
 
   @Column({ nullable: true, type: 'text' })
   adminResponse?: string;
+
+  @Column({ type: 'varchar', length: 10, nullable: true, default: 'medium' })
+  priority?: 'low' | 'medium' | 'high' | 'urgent';
+
+  @Column({ type: 'varchar', nullable: true })
+  assignedTo?: string | null;
+
+  @Column({ default: false })
+  isAnonymous: boolean;
+
+  @Column({ default: false })
+  requiresFollowUp: boolean;
+
+  @Column({ type: 'json', default: [] })
+  chatMessages: Array<{
+    message: string;
+    isAdmin: boolean;
+    timestamp: string;
+    userId?: number;
+    adminId?: number;
+  }>;
 
   @ManyToOne(() => User, user => user.feedbacks, { eager: false })
   user: User;

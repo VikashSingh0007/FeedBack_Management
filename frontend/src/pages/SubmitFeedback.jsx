@@ -4,7 +4,7 @@ import { toast } from 'react-hot-toast';
 import { 
   FiSend, FiAlertCircle, FiThumbsUp, FiPaperclip, 
   FiX, FiStar, FiChevronDown, FiPlus, FiTrash2, 
-  FiEdit2, FiSave, FiCheck, FiXCircle, FiSearch
+  FiEdit2, FiSave, FiCheck, FiXCircle, FiSearch, FiMessageSquare
 } from 'react-icons/fi';
 import { motion, AnimatePresence } from 'framer-motion';
 import Modal from 'react-modal';
@@ -20,7 +20,16 @@ const SubmitFeedback = () => {
     subCategory: '',
     content: '',
     rating: 0,
+    priority: 'medium',
+    assignedTo: '',
+    isAnonymous: false,
+    requiresFollowUp: false
   });
+
+  // Chat system state (only for requests)
+  const [chatMessage, setChatMessage] = useState('');
+  const [chatMessages, setChatMessages] = useState([]);
+
   const [hoverRating, setHoverRating] = useState(0);
   const [files, setFiles] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -233,10 +242,24 @@ const SubmitFeedback = () => {
       const formDataToSend = new FormData();
       formDataToSend.append('type', formData.type);
       formDataToSend.append('content', formData.content);
-      formDataToSend.append('rating', formData.rating.toString());
       formDataToSend.append('department', formData.department);
       formDataToSend.append('category', `${formData.mainCategory} - ${formData.subCategory}`);
-      
+
+      // Add rating only for feedback type
+      if (formData.type === 'feedback') {
+        formDataToSend.append('rating', formData.rating.toString());
+      }
+
+      // Add optional fields only for requests
+      if (formData.type === 'request') {
+        formDataToSend.append('priority', formData.priority);
+        if (formData.assignedTo) {
+          formDataToSend.append('assignedTo', formData.assignedTo);
+        }
+        formDataToSend.append('isAnonymous', formData.isAnonymous.toString());
+        formDataToSend.append('requiresFollowUp', formData.requiresFollowUp.toString());
+      }
+
       files.forEach(file => {
         formDataToSend.append('files', file);
       });
@@ -254,7 +277,11 @@ const SubmitFeedback = () => {
         mainCategory: '',
         subCategory: '',
         content: '', 
-        rating: 0 
+        rating: 0,
+        priority: 'medium',
+        assignedTo: '',
+        isAnonymous: false,
+        requiresFollowUp: false
       });
       setFiles([]);
     } catch (err) {
@@ -263,6 +290,22 @@ const SubmitFeedback = () => {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const resetFormData = () => {
+    setFormData({
+      type: 'feedback',
+      department: '',
+      mainCategory: '',
+      subCategory: '',
+      content: '',
+      rating: 0,
+      priority: 'medium',
+      assignedTo: '',
+      isAnonymous: false,
+      requiresFollowUp: false
+    });
+    setFiles([]);
   };
 
   const triggerFileInput = () => {
@@ -641,6 +684,22 @@ const SubmitFeedback = () => {
     }
   };
 
+  const handleSendMessage = async () => {
+    if (!chatMessage.trim()) return;
+
+    const message = {
+      message: chatMessage,
+      isAdmin: false,
+      timestamp: new Date().toISOString()
+    };
+    setChatMessages(prev => [...prev, message]);
+    setChatMessage('');
+
+    // Note: Chat messages are stored locally for now
+    // In a real app, you would send this to the backend when the request is submitted
+    toast.success('Message added to discussion!');
+  };
+
   return (
     <div className="max-w-6xl mx-auto my-8 px-4">
       <motion.div 
@@ -827,19 +886,93 @@ const SubmitFeedback = () => {
                 <div className="mb-6">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     {formData.type === 'feedback' ? 'Your Feedback' : 'Request Details'} *
-              </label>
-              <textarea
-                name="content"
-                value={formData.content}
-                onChange={handleChange}
-                rows={6}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors resize-none"
-                placeholder={formData.type === 'feedback' 
-                      ? 'What do you like or suggest for improvement? Share your thoughts...' 
-                      : 'Please describe your request in detail. What do you need help with?'}
-                required
-              />
-            </div>
+                  </label>
+                  <textarea
+                    name="content"
+                    value={formData.content}
+                    onChange={handleChange}
+                    rows={6}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none transition-colors"
+                    placeholder={formData.type === 'feedback' 
+                      ? 'Tell us about your experience, suggestions, or concerns...' 
+                      : 'Describe what you need help with...'
+                    }
+                  />
+                </div>
+
+                {/* Optional Fields Section - Only for Requests */}
+                {formData.type === 'request' && (
+                  <div className="mb-6">
+                    <h4 className="text-lg font-medium text-gray-800 mb-4 flex items-center">
+                      <FiEdit2 className="mr-2 text-blue-600" />
+                      Additional Information (Optional)
+                    </h4>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Priority Field */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Priority
+                        </label>
+                        <select
+                          name="priority"
+                          value={formData.priority}
+                          onChange={handleChange}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          <option value="low">Low</option>
+                          <option value="medium">Medium</option>
+                          <option value="high">High</option>
+                          <option value="urgent">Urgent</option>
+                        </select>
+                      </div>
+
+                      {/* Assigned To Field */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Assign To (Optional)
+                        </label>
+                        <input
+                          type="text"
+                          name="assignedTo"
+                          value={formData.assignedTo}
+                          onChange={handleChange}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="Enter name or email"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Checkboxes Row */}
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          name="isAnonymous"
+                          checked={formData.isAnonymous}
+                          onChange={(e) => setFormData(prev => ({ ...prev, isAnonymous: e.target.checked }))}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <label className="ml-2 text-sm text-gray-700">
+                          Submit anonymously
+                        </label>
+                      </div>
+
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          name="requiresFollowUp"
+                          checked={formData.requiresFollowUp}
+                          onChange={(e) => setFormData(prev => ({ ...prev, requiresFollowUp: e.target.checked }))}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <label className="ml-2 text-sm text-gray-700">
+                          Requires follow-up
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Rating Field (for feedback type) */}
                 {formData.type === 'feedback' && (
@@ -850,7 +983,7 @@ const SubmitFeedback = () => {
                         <button
                           key={star}
                           type="button"
-                          onClick={() => setFormData({ ...formData, rating: star })}
+                          onClick={() => setFormData(prev => ({ ...prev, rating: star }))}
                           onMouseEnter={() => setHoverRating(star)}
                           onMouseLeave={() => setHoverRating(0)}
                           className="text-3xl focus:outline-none transform hover:scale-110 transition-transform"
@@ -1275,6 +1408,72 @@ const SubmitFeedback = () => {
           </div>
         </div>
       </Modal>
+
+      {/* Chat System Section - Only for Requests */}
+      {formData.type === 'request' && (
+        <div className="mt-8 bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+            <FiMessageSquare className="mr-2 text-blue-600" />
+            Request Discussion
+          </h3>
+          
+          {/* Chat Messages */}
+          <div className="bg-gray-50 rounded-lg p-4 mb-4 max-h-96 overflow-y-auto">
+            {chatMessages.length > 0 ? (
+              <div className="space-y-3">
+                {chatMessages.map((message, index) => (
+                  <div
+                    key={index}
+                    className={`flex ${message.isAdmin ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div
+                      className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                        message.isAdmin
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white text-gray-800 border border-gray-200'
+                      }`}
+                    >
+                      <div className="text-xs opacity-75 mb-1">
+                        {message.isAdmin ? 'Admin' : 'You'} • {new Date(message.timestamp).toLocaleString()}
+                      </div>
+                      <p className="text-sm">{message.message}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center text-gray-500 py-8">
+                <FiMessageSquare className="mx-auto text-4xl mb-2 opacity-50" />
+                <p>No messages yet. Start the conversation!</p>
+              </div>
+            )}
+          </div>
+
+          {/* Chat Input */}
+          <div className="flex space-x-2">
+            <input
+              type="text"
+              placeholder="Type your message..."
+              value={chatMessage}
+              onChange={(e) => setChatMessage(e.target.value)}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter' && chatMessage.trim()) {
+                  handleSendMessage();
+                }
+              }}
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+            <button
+              onClick={handleSendMessage}
+              disabled={!chatMessage.trim()}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+            >
+              <FiMessageSquare className="mr-2" />
+              Send
+            </button>
+          </div>
+        </div>
+      )}
 
       <style>{`
         .modal-overlay {

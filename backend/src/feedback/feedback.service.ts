@@ -48,10 +48,23 @@ export class FeedbackService {
 
   async create(dto: CreateFeedbackDto, user: any, files?: Express.Multer.File[]) {
     this.logger.log(`Creating new feedback for user ${user.userId}`);
+    this.logger.log(`Received DTO data:`, {
+      type: dto.type,
+      content: dto.content,
+      department: dto.department,
+      category: dto.category,
+      rating: dto.rating,
+      priority: dto.priority,
+      assignedTo: dto.assignedTo,
+      isAnonymous: dto.isAnonymous,
+      requiresFollowUp: dto.requiresFollowUp
+    });
     
     // Validate department, category, and subcategory
     if (dto.department && dto.category) {
       const [mainCat, subCat] = dto.category.split(' - ');
+      this.logger.log(`Parsed category - Main: ${mainCat}, Sub: ${subCat}`);
+      
       const categories = await this.categoriesService.getCategoriesByDepartment(dto.department);
       
       if (!categories[mainCat] || !categories[mainCat].includes(subCat)) {
@@ -75,14 +88,38 @@ export class FeedbackService {
       department: dto.department,
       category: dto.category,
       rating: dto.rating,
+      priority: dto.priority || 'medium',
+      assignedTo: dto.assignedTo || null,
+      isAnonymous: dto.isAnonymous || false,
+      requiresFollowUp: dto.requiresFollowUp || false,
       status: 'pending' as FeedbackStatus,
       attachments: files?.map(file => file.path),
       cardId,
-      user: { id: user.userId } as User
+      user: { id: user.userId } as User,
+      chatMessages: [] // Initialize empty chat messages array
+    });
+    
+    this.logger.log(`Created feedback entity:`, {
+      cardId: feedback.cardId,
+      type: feedback.type,
+      status: feedback.status,
+      priority: feedback.priority,
+      assignedTo: feedback.assignedTo,
+      isAnonymous: feedback.isAnonymous,
+      requiresFollowUp: feedback.requiresFollowUp
     });
     
     const savedFeedback = await this.repo.save(feedback);
     this.logger.log(`Feedback ${cardId} created successfully`);
+    this.logger.log(`Saved feedback data:`, {
+      id: savedFeedback.id,
+      cardId: savedFeedback.cardId,
+      status: savedFeedback.status,
+      priority: savedFeedback.priority,
+      assignedTo: savedFeedback.assignedTo,
+      isAnonymous: savedFeedback.isAnonymous,
+      requiresFollowUp: savedFeedback.requiresFollowUp
+    });
 
     // Send notifications (non-blocking)
     this.sendNotifications(savedFeedback, user.email)
@@ -106,6 +143,17 @@ export class FeedbackService {
             feedback.type
           ).then(() => this.logger.log(`Confirmation sent to ${userEmail}`))
           .catch(err => this.logger.error(`Failed to send confirmation to ${userEmail}:`, err))
+        );
+
+        // Also send ticket update notification
+        notificationPromises.push(
+          this.mailgunService.sendTicketUpdateNotification(
+            userEmail,
+            feedback.cardId,
+            'status',
+            { status: feedback.status, priority: feedback.priority || 'medium' }
+          ).then(() => this.logger.log(`Ticket update notification sent to ${userEmail}`))
+          .catch(err => this.logger.error(`Failed to send ticket update notification to ${userEmail}:`, err))
         );
       }
 
@@ -153,11 +201,17 @@ export class FeedbackService {
   }
 
   async findOne(cardId: string, userId?: number) {
-    this.logger.log(`Fetching feedback ${cardId} ${userId ? `for user ${userId}` : ''}`);
+    this.logger.log(`🔍 [FINDONE] ===== FINDING FEEDBACK START =====`);
+    this.logger.log(`🔍 [FINDONE] Card ID: ${cardId}`);
+    this.logger.log(`🔍 [FINDONE] User ID: ${userId || 'Not provided'}`);
+    
     const where: any = { cardId };
     if (userId) {
       where.user = { id: userId };
+      this.logger.log(`🔍 [FINDONE] Adding user filter: ${userId}`);
     }
+    
+    this.logger.log(`🔍 [FINDONE] Final where clause:`, JSON.stringify(where, null, 2));
     
     const feedback = await this.repo.findOne({ 
       where,
@@ -165,11 +219,23 @@ export class FeedbackService {
     });
     
     if (!feedback) {
-      this.logger.warn(`Feedback ${cardId} not found`);
+      this.logger.warn(`❌ [FINDONE] Feedback ${cardId} not found`);
+      this.logger.warn(`❌ [FINDONE] Search criteria:`, JSON.stringify(where, null, 2));
       throw new NotFoundException('Feedback not found');
     }
     
-    this.logger.log(`Successfully retrieved feedback ${cardId}`);
+    this.logger.log(`✅ [FINDONE] Feedback found successfully:`, {
+      id: feedback.id,
+      cardId: feedback.cardId,
+      type: feedback.type,
+      status: feedback.status,
+      userId: feedback.user?.id,
+      userEmail: feedback.user?.email,
+      chatMessagesCount: feedback.chatMessages?.length || 0,
+      chatMessages: feedback.chatMessages
+    });
+    
+    this.logger.log(`🔍 [FINDONE] ===== FINDING FEEDBACK SUCCESS =====`);
     return FeedbackResponseDto.fromEntity(feedback);
   }
 
@@ -271,6 +337,17 @@ export class FeedbackService {
           ).then(() => this.logger.log(`[FeedbackService] ✅ User notification sent successfully to ${feedback.user.email}`))
           .catch(err => this.logger.error(`[FeedbackService] ❌ Failed to send user notification to ${feedback.user.email}:`, err))
         );
+
+        // Also send ticket update notification
+        notificationPromises.push(
+          this.mailgunService.sendTicketUpdateNotification(
+            feedback.user.email,
+            feedback.cardId,
+            'status',
+            { status: feedback.status, adminResponse: feedback.adminResponse }
+          ).then(() => this.logger.log(`[FeedbackService] ✅ Ticket update notification sent successfully to ${feedback.user.email}`))
+          .catch(err => this.logger.error(`[FeedbackService] ❌ Failed to send ticket update notification to ${feedback.user.email}:`, err))
+        );
       } else {
         this.logger.warn(`[FeedbackService] No user email found, skipping user notification`);
       }
@@ -297,6 +374,84 @@ export class FeedbackService {
         error: error.message,
         stack: error.stack
       });
+      throw error;
+    }
+  }
+
+  async addChatMessage(feedbackId: number, message: string, isAdmin: boolean, userId: number) {
+    this.logger.log(`Adding chat message to request ${feedbackId}`);
+    
+    try {
+      const feedback = await this.repo.findOne({ 
+        where: { id: feedbackId },
+        relations: ['user']
+      });
+      
+      if (!feedback) {
+        throw new Error('Request not found');
+      }
+
+      // Check if this is a request type
+      if (feedback.type !== 'request') {
+        throw new Error('Chat is only available for requests');
+      }
+
+      // Create chat message object
+      const chatMessage = {
+        message,
+        isAdmin,
+        timestamp: new Date().toISOString(),
+        userId: isAdmin ? undefined : userId,
+        adminId: isAdmin ? userId : undefined
+      };
+
+      // Save chat message to database
+      if (!feedback.chatMessages) {
+        feedback.chatMessages = [];
+      }
+      feedback.chatMessages.push(chatMessage);
+      
+      // Save updated feedback with chat message
+      await this.repo.save(feedback);
+      this.logger.log(`✅ Chat message saved to database for request ${feedbackId}`);
+
+      // Store chat message (you can implement this based on your needs)
+      this.logger.log(`Chat message stored for request ${feedbackId}:`, chatMessage);
+
+      // Send email notifications
+      try {
+        if (isAdmin) {
+          // Admin sent message - notify user
+          if (feedback.user?.email) {
+            await this.mailgunService.sendChatMessageNotification(
+              feedback.user.email,
+              feedback.cardId,
+              message,
+              'Admin',
+              true
+            );
+            this.logger.log(`✅ Chat notification sent to user ${feedback.user.email}`);
+          }
+        } else {
+          // User sent message - notify admin
+          await this.mailgunService.sendChatMessageNotification(
+            this.mailgunService['adminEmail'],
+            feedback.cardId,
+            message,
+            feedback.user?.email || 'Anonymous User',
+            false
+          );
+          this.logger.log(`✅ Chat notification sent to admin`);
+        }
+      } catch (emailError) {
+        this.logger.error(`Failed to send chat notification:`, emailError);
+        // Don't fail the chat message if email fails
+      }
+
+      return chatMessage;
+    } catch (error) {
+      this.logger.error(`Error adding chat message to request ${feedbackId}:`, error);
+      throw error;
     }
   }
 

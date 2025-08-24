@@ -260,82 +260,180 @@ async sendFeedbackStatusUpdate(to: string, feedbackId: string, type: string, sta
   }
 
   async sendAdminStatusUpdateNotification(feedback: any) {
-    this.logger.log(`[MailgunService] ===== SEND ADMIN STATUS UPDATE NOTIFICATION START =====`);
-    this.logger.log(`[MailgunService] Feedback data:`, {
-      cardId: feedback.cardId,
-      type: feedback.type,
-      status: feedback.status,
-      userEmail: feedback.user?.email || 'No user email',
-      hasAdminResponse: !!feedback.adminResponse,
-      adminResponseLength: feedback.adminResponse?.length || 0
-    });
-    
     try {
-      this.logger.log(`[MailgunService] Preparing admin notification email...`);
+      this.logger.log(`Sending admin status update notification for feedback ${feedback.cardId}`);
+      
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #dc2626;">Ticket Status Updated</h2>
+          <p>A ticket status has been updated and requires your attention.</p>
+          
+          <div style="background: #f3f4f6; padding: 16px; border-radius: 8px; margin: 16px 0;">
+            <p><strong>Ticket ID:</strong> ${feedback.cardId}</p>
+            <p><strong>Type:</strong> ${feedback.type}</p>
+            <p><strong>New Status:</strong> ${feedback.status}</p>
+            <p><strong>Category:</strong> ${feedback.category || 'N/A'}</p>
+            <p><strong>Department:</strong> ${feedback.department || 'N/A'}</p>
+            <p><strong>Updated:</strong> ${new Date(feedback.updatedAt).toLocaleString()}</p>
+          </div>
+          
+          <p>Please review the ticket and take appropriate action.</p>
+          
+          <a href="${this.adminUrl}/feedback/${feedback.cardId}" 
+             style="display: inline-block; background: #dc2626; color: white; 
+                    padding: 12px 24px; border-radius: 4px; text-decoration: none; 
+                    font-weight: bold; margin: 16px 0;">
+            View Ticket
+          </a>
+          
+          <p style="font-size: 14px; color: #6b7280;">
+            This is an automated notification. Please do not reply to this email.
+          </p>
+        </div>
+      `;
 
-      const statusLabels = {
-        'pending': 'Pending',
-        'in_progress': 'In Progress', 
-        'resolved': 'Resolved',
-        'rejected': 'Rejected'
+      await this.mg.messages.create(this.domain, {
+        from: this.fromEmail,
+        to: this.adminEmail,
+        subject: `Ticket Status Updated: ${feedback.cardId}`,
+        html: html,
+      });
+
+      this.logger.log(`✅ Admin status update notification sent successfully for ${feedback.cardId}`);
+    } catch (error) {
+      this.logger.error(`❌ Failed to send admin status update notification for ${feedback.cardId}:`, error);
+      throw error;
+    }
+  }
+
+  async sendChatMessageNotification(
+    to: string, 
+    feedbackId: string, 
+    message: string, 
+    senderName: string, 
+    isAdmin: boolean
+  ) {
+    try {
+      this.logger.log(`Sending chat message notification to ${to} for feedback ${feedbackId}`);
+      
+      // Validate email format
+      if (!to || !to.includes('@')) {
+        throw new Error('Invalid recipient email address');
+      }
+
+      const senderType = isAdmin ? 'Admin' : 'User';
+      const messagePreview = message.length > 100 ? message.substring(0, 100) + '...' : message;
+
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #2563eb;">New Message on Ticket</h2>
+          <p>You have received a new message on your ticket.</p>
+          
+          <div style="background: #f3f4f6; padding: 16px; border-radius: 8px; margin: 16px 0;">
+            <p><strong>Ticket ID:</strong> ${feedbackId}</p>
+            <p><strong>From:</strong> ${senderName} (${senderType})</p>
+            <p><strong>Message:</strong> ${messagePreview}</p>
+            <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
+          </div>
+          
+          <p>Click below to view the full conversation and respond:</p>
+          
+          <a href="${this.frontendUrl}/feedback/${feedbackId}" 
+             style="display: inline-block; background: #2563eb; color: white; 
+                    padding: 12px 24px; border-radius: 4px; text-decoration: none; 
+                    font-weight: bold; margin: 16px 0;">
+            View Ticket & Respond
+          </a>
+          
+          <p style="font-size: 14px; color: #6b7280;">
+            If the button doesn't work, copy and paste this link into your browser:<br>
+            ${this.frontendUrl}/feedback/${feedbackId}
+          </p>
+          
+          <p style="font-size: 14px; color: #6b7280;">
+            This is an automated notification. Please do not reply to this email.
+          </p>
+        </div>
+      `;
+
+      await this.mg.messages.create(this.domain, {
+        from: this.fromEmail,
+        to: to,
+        subject: `New Message on Ticket ${feedbackId}`,
+        html: html,
+      });
+
+      this.logger.log(`✅ Chat message notification sent successfully to ${to} for ${feedbackId}`);
+    } catch (error) {
+      this.logger.error(`❌ Failed to send chat message notification to ${to} for ${feedbackId}:`, error);
+      throw error;
+    }
+  }
+
+  async sendTicketUpdateNotification(
+    to: string,
+    feedbackId: string,
+    updateType: 'status' | 'priority' | 'assignment' | 'resolution',
+    details: any
+  ) {
+    try {
+      this.logger.log(`Sending ticket update notification to ${to} for feedback ${feedbackId}`);
+      
+      // Validate email format
+      if (!to || !to.includes('@')) {
+        throw new Error('Invalid recipient email address');
+      }
+
+      const updateMessages = {
+        status: `Status changed to: ${details.status}`,
+        priority: `Priority updated to: ${details.priority}`,
+        assignment: `Ticket assigned to: ${details.assignedTo}`,
+        resolution: `Ticket resolved with comment: ${details.adminResponse || 'No comment provided'}`
       };
 
       const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #2563eb;">Feedback Status Updated</h2>
+          <h2 style="color: #059669;">Ticket Update Notification</h2>
+          <p>Your ticket has been updated.</p>
           
           <div style="background: #f3f4f6; padding: 16px; border-radius: 8px; margin: 16px 0;">
-            <p><strong>Reference ID:</strong> ${feedback.cardId}</p>
-            <p><strong>Type:</strong> ${feedback.type.charAt(0).toUpperCase() + feedback.type.slice(1)}</p>
-            <p><strong>New Status:</strong> ${statusLabels[feedback.status]}</p>
-            <p><strong>User:</strong> ${feedback.user?.email || 'Anonymous'}</p>
-            ${feedback.adminResponse ? `<p><strong>Admin Response:</strong> ${feedback.adminResponse}</p>` : ''}
+            <p><strong>Ticket ID:</strong> ${feedbackId}</p>
+            <p><strong>Update Type:</strong> ${updateType.charAt(0).toUpperCase() + updateType.slice(1)}</p>
+            <p><strong>Details:</strong> ${updateMessages[updateType]}</p>
+            <p><strong>Updated:</strong> ${new Date().toLocaleString()}</p>
           </div>
           
-          <p>The status of this feedback has been updated. You can review it in the admin dashboard:</p>
+          <p>Click below to view the updated ticket:</p>
           
-          ${this.adminUrl ? `<a href="${this.adminUrl}/feedback/${feedback.cardId}" 
-             style="display: inline-block; background: #2563eb; color: white; 
+          <a href="${this.frontendUrl}/feedback/${feedbackId}" 
+             style="display: inline-block; background: #059669; color: white; 
                     padding: 12px 24px; border-radius: 4px; text-decoration: none; 
                     font-weight: bold; margin: 16px 0;">
-            Review in Admin Dashboard
-          </a>` : ''}
+            View Updated Ticket
+          </a>
           
-          <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e7eb;
-                      font-size: 12px; color: #6b7280;">
-            <p>This is an automated notification from the feedback system.</p>
-          </div>
+          <p style="font-size: 14px; color: #6b7280;">
+            If the button doesn't work, copy and paste this link into your browser:<br>
+            ${this.frontendUrl}/feedback/${feedbackId}
+          </p>
+          
+          <p style="font-size: 14px; color: #6b7280;">
+            This is an automated notification. Please do not reply to this email.
+          </p>
         </div>
       `;
 
-      const messageData = {
+      await this.mg.messages.create(this.domain, {
         from: this.fromEmail,
-        to: [this.adminEmail],
-        subject: `Feedback Status Updated: ${feedback.cardId} - ${statusLabels[feedback.status]}`,
-        html,
-      };
-
-      this.logger.log(`[MailgunService] Admin notification message data:`, {
-        from: messageData.from,
-        to: messageData.to,
-        subject: messageData.subject,
-        hasHtml: !!messageData.html,
-        adminEmail: this.adminEmail
+        to: to,
+        subject: `Ticket Update: ${feedbackId}`,
+        html: html,
       });
 
-      this.logger.log(`[MailgunService] Sending admin notification via Mailgun...`);
-      const result = await this.mg.messages.create(this.domain, messageData);
-      this.logger.log(`[MailgunService] ✅ Admin status update notification sent successfully for ${feedback.cardId}`);
-      this.logger.log(`[MailgunService] Mailgun response:`, result);
-      this.logger.log(`[MailgunService] ===== SEND ADMIN STATUS UPDATE NOTIFICATION SUCCESS =====`);
-      return result;
+      this.logger.log(`✅ Ticket update notification sent successfully to ${to} for ${feedbackId}`);
     } catch (error) {
-      this.logger.error(`[MailgunService] ===== SEND ADMIN STATUS UPDATE NOTIFICATION FAILED =====`);
-      this.logger.error(`[MailgunService] Failed to send admin status update notification for ${feedback.cardId}`, {
-        error: error.message,
-        stack: error.stack
-      });
-      throw new Error(`Failed to send admin status update notification: ${error.message}`);
+      this.logger.error(`❌ Failed to send ticket update notification to ${to} for ${feedbackId}:`, error);
+      throw error;
     }
   }
 }

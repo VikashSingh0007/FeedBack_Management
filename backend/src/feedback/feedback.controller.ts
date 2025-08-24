@@ -171,4 +171,69 @@ export class FeedbackController {
       throw new BadRequestException('Failed to update feedback status');
     }
   }
+
+  @Post(':cardId/chat')
+  @UseGuards(JwtAuthGuard)
+  async addChatMessage(
+    @Param('cardId') cardId: string,
+    @Body() body: { message: string },
+    @Request() req
+  ) {
+    console.log(`🚀 [CHAT] ===== CHAT MESSAGE REQUEST START =====`);
+    console.log(`🚀 [CHAT] Card ID: ${cardId}`);
+    console.log(`🚀 [CHAT] Message: ${body.message}`);
+    console.log(`🚀 [CHAT] User ID: ${req.user.userId}`);
+    console.log(`🚀 [CHAT] User Role: ${req.user.role}`);
+    console.log(`🚀 [CHAT] Request Body:`, JSON.stringify(body, null, 2));
+    
+    try {
+      console.log(`🔍 [CHAT] Searching for feedback with cardId: ${cardId}`);
+      
+      // First check if this is a request type
+      let feedback;
+      if (req.user.role === 'admin') {
+        // Admin can chat on any request - no user filter
+        feedback = await this.feedbackService.findOne(cardId);
+        console.log(`✅ [CHAT] Admin access - no user filter applied`);
+      } else {
+        // Regular user can only chat on their own requests
+        feedback = await this.feedbackService.findOne(cardId, req.user.userId);
+        console.log(`✅ [CHAT] User access - user filter applied for user ID: ${req.user.userId}`);
+      }
+      
+      console.log(`✅ [CHAT] Feedback found:`, {
+        id: feedback.id,
+        cardId: feedback.cardId,
+        type: feedback.type,
+        status: feedback.status,
+        userId: feedback.user?.id
+      });
+      
+      if (feedback.type !== 'request') {
+        console.log(`❌ [CHAT] Feedback type is not request: ${feedback.type}`);
+        throw new BadRequestException('Chat is only available for requests');
+      }
+      
+      console.log(`✅ [CHAT] Feedback type is request, proceeding with chat message`);
+      console.log(`🚀 [CHAT] Calling feedbackService.addChatMessage...`);
+
+      const result = await this.feedbackService.addChatMessage(
+        feedback.id, // Use the actual database ID
+        body.message,
+        req.user.role === 'admin',
+        req.user.userId
+      );
+      
+      console.log(`✅ [CHAT] Chat message added successfully:`, result);
+      console.log(`🚀 [CHAT] ===== CHAT MESSAGE REQUEST SUCCESS =====`);
+      return result;
+    } catch (error) {
+      console.error(`❌ [CHAT] ===== CHAT MESSAGE REQUEST FAILED =====`);
+      console.error(`❌ [CHAT] Error type:`, error.constructor.name);
+      console.error(`❌ [CHAT] Error message:`, error.message);
+      console.error(`❌ [CHAT] Error stack:`, error.stack);
+      console.error(`❌ [CHAT] Full error object:`, JSON.stringify(error, null, 2));
+      throw new BadRequestException('Failed to add chat message');
+    }
+  }
 }
